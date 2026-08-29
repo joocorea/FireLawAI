@@ -1,0 +1,118 @@
+import requests
+import sys
+import os
+import json
+
+# Windows 터미널에서 한글 깨짐 방지
+sys.stdout.reconfigure(encoding='utf-8')
+
+# ==========================================
+# 🛑 API 인증키 설정 (GitHub Actions 보안을 위해 환경변수 우선 적용)
+# 환경변수 'LAW_API_KEY'가 없으면 기본값인 'firekeeper'를 사용합니다.
+API_KEY = os.getenv("LAW_API_KEY", "firekeeper")
+# ==========================================
+
+# 데이터 저장용 폴더 생성
+os.makedirs("data", exist_ok=True)
+
+def fetch_law_detail(law_id, law_name):
+    print(f"\n📖 '{law_name}' (고유번호: {law_id}) 의 본문을 가져옵니다...")
+    
+    # 법제처 현행법령 본문 검색 API 주소 (JSON 형식 요청)
+    # MST 파라미터에 법령일련번호를 넣어 특정 법령의 상세 내용을 호출합니다.
+    url = f"https://www.law.go.kr/DRF/lawService.do?OC={API_KEY}&target=law&type=JSON&MST={law_id}"
+    
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            print("❌ 본문 가져오기 실패")
+            return
+            
+        data = response.json()
+        
+        # 전체 JSON을 파일로 안전하게 저장
+        with open('data/latest_law_detail.json', 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            
+        # 법령 본문(조문) 데이터 파싱
+        # JSON 구조: data -> '법령' -> '조문' -> '조문단위' 리스트
+        jo_list = data.get('법령', {}).get('조문', {}).get('조문단위', [])
+        
+        if not jo_list:
+            print("❌ 본문 조문 내역을 찾을 수 없습니다.")
+            return
+            
+        print("✅ 본문 가져오기 성공! 일부 조문을 출력합니다:\n")
+        
+        # 상위 5개 조문만 출력해보기
+        print("-" * 50)
+        for jo in jo_list[:5]:
+            jo_num = jo.get('조문번호', '')
+            jo_title = jo.get('조문제목', '')
+            jo_content = jo.get('조문내용', '')
+            
+            # 조문 제목이 있으면 괄호로 묶어서 표시
+            title_str = f"({jo_title})" if jo_title else ""
+            
+            print(f"제{jo_num}조 {title_str}")
+            print(f"{jo_content.strip()}\n")
+        print("-" * 50)
+        
+    except Exception as e:
+        print(f"❌ 본문 파싱 에러: {e}")
+
+def fetch_fire_law(keyword):
+    print(f"📡 법제처 서버에 '{keyword}' 관련 법령을 요청합니다...")
+    
+    # 법제처 현행법령 목록 검색 API 주소
+    url = f"https://www.law.go.kr/DRF/lawSearch.do?OC={API_KEY}&target=law&type=JSON&query={keyword}"
+    
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            print("❌ 서버 연결 실패")
+            return
+            
+        data = response.json()
+        law_list = data.get('LawSearch', {}).get('law', [])
+        
+        if not law_list:
+            print("❌ 관련 법령을 찾지 못했습니다.")
+            return
+            
+        print(f"\n✅ 성공! 총 {len(law_list)}개의 법령 목록을 찾았습니다.\n")
+        
+        # 법령 목록 데이터를 파일로 저장
+        with open('data/latest_law_list.json', 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print("📁 법령 목록 파일 저장 완료 (data/latest_law_list.json)\n")
+        
+        # 첫 번째 법령 정보 저장
+        first_law_id = None
+        first_law_name = None
+        
+        # 상위 3개 법령만 목록 출력
+        for i, law in enumerate(law_list[:3]):
+            law_name = law.get('법령명한글', '이름 없음')
+            law_id = law.get('법령일련번호', '번호 없음')
+            law_date = law.get('시행일자', '날짜 없음')
+            
+            if i == 0:
+                first_law_id = law_id
+                first_law_name = law_name
+                
+            print(f"{i+1}. 📜 {law_name}")
+            print(f"   - 시행일: {law_date[:4]}년 {law_date[4:6]}월 {law_date[6:]}일")
+            print(f"   - 고유번호: {law_id}\n")
+            
+        # 첫 번째 법령의 본문 가져오기 함수 호출
+        if first_law_id:
+            fetch_law_detail(first_law_id, first_law_name)
+            
+    except Exception as e:
+        print(f"❌ 에러가 발생했습니다: {e}")
+
+if __name__ == "__main__":
+    print("=== 🚒 실전! 법제처 실시간 법령 검색기 ===\n")
+    # '소방' 이라는 키워드로 법령 검색 테스트 시작
+    fetch_fire_law("소방")
