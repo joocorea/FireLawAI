@@ -27,6 +27,8 @@ jobs:
     - name: Run Fire Law API Script
       env:
         LAW_API_KEY: ${{ secrets.LAW_API_KEY }}
+        GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+        GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       run: |
         python real_fire_api.py
 
